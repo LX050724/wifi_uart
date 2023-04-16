@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 #include "hal/lv_hal_disp.h"
 #include "widgets/lv_label.h"
+#include <pthread.h>
 
 static const char *TAG = "OLED";
 
@@ -33,6 +34,8 @@ static const char *TAG = "OLED";
 
 static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
 static lv_disp_drv_t disp_drv;      // contains callback functions
+static pthread_t oled_thread;
+static void *oled_lvgl_thread(void *param);
 
 static bool oled_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata,
                                          void *user_ctx);
@@ -119,6 +122,17 @@ void oled_init()
     lv_obj_set_width(label, 150);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
 
+    int ret = pthread_create(&oled_thread, NULL, oled_lvgl_thread, NULL);
+    if (ret != 0)
+    {
+        ESP_LOGE(TAG, "create lvgl thread failed");
+    }
+
+    pthread_detach(oled_thread);
+}
+
+static void *oled_lvgl_thread(void *param)
+{
     while (1)
     {
         // raise the task priority of LVGL and/or reduce the handler period can improve the performance
@@ -126,6 +140,7 @@ void oled_init()
         // The task running lv_timer_handler should have lower priority than that running `lv_tick_inc`
         lv_timer_handler();
     }
+    return NULL;
 }
 
 static bool oled_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata,
