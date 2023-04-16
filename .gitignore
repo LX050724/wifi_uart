@@ -1,0 +1,7 @@
+sdkconfig.old
+sdkconfig
+build/
+.vscode/
+.cache/
+debug.log
+managed_components/

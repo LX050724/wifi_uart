@@ -1,0 +1,9 @@
+menu "User Configuration"
+    config OLED_I2C_SDA
+        int "OLED I2C SDA GPIO Num"
+        default 7
+    
+    config OLED_I2C_SCL
+        int "OLED I2C SCL GPIO Num"
+        default 6
+endmenu
