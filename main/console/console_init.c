@@ -12,7 +12,7 @@
 
 void register_uart_cmd();
 
-int init_console_repl()
+int console_repl_init()
 {
     esp_console_repl_t *repl = NULL;
     esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();

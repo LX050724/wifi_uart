@@ -7,17 +7,20 @@
 #include "esp_netif.h"
 #include "esp_sleep.h"
 #include "esp_wifi_types.h"
+#include "freertos/portmacro.h"
 #include "hal/gpio_types.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 #include "soc/clk_tree_defs.h"
+#include "wifi_manager/wifi_manager.h"
+#include "wifi_manager/smart_config/smart_config.h"
 #include <esp_wifi.h>
+#include <oled/oled.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/unistd.h>
-#include <oled/oled.h>
 
 void app_main(void)
 {
@@ -87,35 +90,10 @@ void app_main(void)
         }
     }
 
-    init_console_repl();
+    console_repl_init();
+    wifi_init();
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    wifi_init_config_t wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&wifi_init_config));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    wifi_scan_config_t scan_config = {};
-    scan_config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
-
-    wifi_ap_record_t ap_records[16];
-    uint16_t number = 16;
-    esp_wifi_scan_get_ap_records(&number, ap_records);
-    for (int i = 0; i < number; i++)
-    {
-        ESP_LOGI("SCAN", "%d \"%s\": %d %d", i + 1, ap_records[i].ssid, ap_records[i].rssi, ap_records[i].authmode);
-    }
-
-    wifi_config_t wifi_config = {};
-    strcpy((char *)wifi_config.sta.ssid, "PDCN");
-    strcpy((char *)wifi_config.sta.password, "zhengou123");
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    wifi_config.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-    esp_wifi_connect();
+    wifi_wait_sta_start(portMAX_DELAY);
+    smart_config_start(300 * 1000);
+    ESP_LOGI("main", "smart_config_wait %s", esp_err_to_name(smart_config_wait(portMAX_DELAY)));
 }
-

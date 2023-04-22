@@ -1,3 +1,11 @@
 #pragma once
 
-int init_console_repl();
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int console_repl_init();
+
+#ifdef __cplusplus
+}
+#endif
