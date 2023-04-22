@@ -9,42 +9,58 @@
 #include "esp_timer.h"
 #include "hal/lv_hal_disp.h"
 #include "widgets/lv_label.h"
-#include <pthread.h>
+#include <sys/cdefs.h>
 
 static const char *TAG = "OLED";
 
 #define I2C_HOST I2C_NUM_0
 
-#define EXAMPLE_I2C_HW_ADDR 0x3C
+#define I2C_HW_ADDR 0x3C
 
-#define EXAMPLE_LCD_PIXEL_CLOCK_HZ (400 * 1000)
-#define EXAMPLE_PIN_NUM_SDA 3
-#define EXAMPLE_PIN_NUM_SCL 4
-#define EXAMPLE_PIN_NUM_RST -1
-#define EXAMPLE_I2C_HW_ADDR 0x3C
+#define LCD_H_RES 128
+#define LCD_V_RES 32
 
-// The pixel number in horizontal and vertical
-#define EXAMPLE_LCD_H_RES 128
-#define EXAMPLE_LCD_V_RES 32
-// Bit number used to represent command and parameter
-#define EXAMPLE_LCD_CMD_BITS 8
-#define EXAMPLE_LCD_PARAM_BITS 8
+#define LVGL_TICK_PERIOD_MS 2
 
-#define EXAMPLE_LVGL_TICK_PERIOD_MS 2
+struct __packed
+{
+    uint8_t head;
+    uint8_t GRAM[LCD_V_RES / 8][LCD_H_RES];
+} display_ram;
 
 static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
 static lv_disp_drv_t disp_drv;      // contains callback functions
-static pthread_t oled_thread;
-static void *oled_lvgl_thread(void *param);
-
-static bool oled_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata,
-                                         void *user_ctx);
+static TaskHandle_t oled_task_handle;
+static void oled_task(void *param);
 
 static void oled_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
                                 lv_color_t color, lv_opa_t opa);
 static void oled_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
 static void oled_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area);
 static void oled_increase_lvgl_tick(void *arg);
+
+uint8_t CMD_Data[] = {
+    0x00,                // MEM ADDR
+    0xAE,                // 关闭显示
+    0x00,                // 设置显示时的起始列地址低四位。0
+    0x10,                // 设置显示时的起始列地址高四位。0
+    0x40,                // 设置显示RAM显示起始行寄存器
+    0xB0,                // 用于设置页地址，其低三位的值对应着GRAM的页地址。
+    0x81, 0x8f,          // 设置对比度255
+    0xA1,                // 列地址127被映射到SEG0
+    0xA6,                // Set Normal/Inverse Display
+    0xA8, LCD_V_RES - 1, // 设置多路复用率
+    0xC8,                // 重新映射模式。扫描的COM COM0 (n - 1)
+    0xD3, 0x00,          // Set Display Offset, 0
+    0xD5, 0x80,          // Set Display Clock Divide Ratio/Oscillator Frequency
+    0xD9, 0xF1,          // Set Pre-charge Period
+    0xDA, 0x02,          // Set COM Pins Hardware Configuration
+    0x8D, 0x14,          // DCDC ON
+    0x20, 0x00,          // 设置寻址模式为水平模式
+    0xb0,                // 设置行列指针位置0,0
+    0x00, 0x10,          //
+    0xAF,                // 开启显示
+};
 
 void oled_init()
 {
@@ -56,61 +72,34 @@ void oled_init()
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = 400000,
     };
-    ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &i2c_conf));
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
+    ESP_ERROR_CHECK(i2c_param_config(I2C_HOST, &i2c_conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_HOST, I2C_MODE_MASTER, 0, 0, 0));
 
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_i2c_config_t io_config = {
-        .dev_addr = EXAMPLE_I2C_HW_ADDR,
-        .control_phase_bytes = 1,               // According to SSD1306 datasheet
-        .dc_bit_offset = 6,                     // According to SSD1306 datasheet
-        .lcd_cmd_bits = EXAMPLE_LCD_CMD_BITS,   // According to SSD1306 datasheet
-        .lcd_param_bits = EXAMPLE_LCD_CMD_BITS, // According to SSD1306 datasheet
-        .on_color_trans_done = oled_notify_lvgl_flush_ready,
-        .user_ctx = &disp_drv,
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)I2C_HOST, &io_config, &io_handle));
-
-    ESP_LOGI(TAG, "Install SSD1306 panel driver");
-    esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_panel_dev_config_t panel_config = {
-        .bits_per_pixel = 1,
-        .reset_gpio_num = -1,
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(io_handle, &panel_config, &panel_handle));
-
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+    i2c_master_write_to_device(I2C_HOST, I2C_HW_ADDR, CMD_Data, sizeof(CMD_Data), pdMS_TO_TICKS(100));
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
-    // alloc draw buffers used by LVGL
-    // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = malloc(EXAMPLE_LCD_H_RES * 20 * sizeof(lv_color_t));
-    assert(buf1);
-    lv_color_t *buf2 = malloc(EXAMPLE_LCD_H_RES * 20 * sizeof(lv_color_t));
-    assert(buf2);
-    // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_LCD_H_RES * 20);
+
+    display_ram.head = 0x40;
+    lv_disp_draw_buf_init(&disp_buf, display_ram.GRAM, NULL, LCD_H_RES * LCD_V_RES);
 
     ESP_LOGI(TAG, "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = EXAMPLE_LCD_H_RES;
-    disp_drv.ver_res = EXAMPLE_LCD_V_RES;
-    disp_drv.flush_cb = oled_lvgl_flush_cb;
-    disp_drv.draw_buf = &disp_buf;
-    disp_drv.user_data = panel_handle;
-    disp_drv.rounder_cb = oled_lvgl_rounder;
-    disp_drv.set_px_cb = oled_lvgl_set_px_cb;
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    disp_drv.hor_res = LCD_H_RES;                      // 水平大小
+    disp_drv.ver_res = LCD_V_RES;                      // 垂直大小
+    disp_drv.full_refresh = 1;                         // 全屏刷新
+    disp_drv.flush_cb = oled_lvgl_flush_cb;            // 刷新函数
+    disp_drv.draw_buf = &disp_buf;                     // 缓冲区
+    disp_drv.rounder_cb = oled_lvgl_rounder;           //
+    disp_drv.set_px_cb = oled_lvgl_set_px_cb;          //
+    lv_disp_t *disp = lv_disp_drv_register(&disp_drv); // 注册
 
+    // 创建2ms定时器作为时钟源
     ESP_LOGI(TAG, "Install LVGL tick timer");
-    // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
     const esp_timer_create_args_t lvgl_tick_timer_args = {.callback = &oled_increase_lvgl_tick, .name = "lvgl_tick"};
     esp_timer_handle_t lvgl_tick_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
 
     ESP_LOGI(TAG, "Display LVGL Scroll Text");
     // example_lvgl_demo_ui(disp);
@@ -122,59 +111,45 @@ void oled_init()
     lv_obj_set_width(label, 150);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
 
-    int ret = pthread_create(&oled_thread, NULL, oled_lvgl_thread, NULL);
+    int ret = xTaskCreate(oled_task, "lvgl", 2048, NULL, 5, &oled_task_handle);
     if (ret != 0)
     {
         ESP_LOGE(TAG, "create lvgl thread failed");
     }
-
-    pthread_detach(oled_thread);
 }
 
-static void *oled_lvgl_thread(void *param)
+static void oled_task(void *param)
 {
+    TickType_t PreviousWakeTime = xTaskGetTickCount();
     while (1)
     {
-        // raise the task priority of LVGL and/or reduce the handler period can improve the performance
-        vTaskDelay(pdMS_TO_TICKS(10));
-        // The task running lv_timer_handler should have lower priority than that running `lv_tick_inc`
         lv_timer_handler();
+        xTaskDelayUntil(&PreviousWakeTime, pdMS_TO_TICKS(20));
     }
-    return NULL;
-}
-
-static bool oled_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata,
-                                         void *user_ctx)
-{
-    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
-    lv_disp_flush_ready(disp_driver);
-    return false;
+    vTaskDelete(NULL);
 }
 
 static void oled_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)drv->user_data;
-    int offsetx1 = area->x1;
-    int offsetx2 = area->x2;
-    int offsety1 = area->y1;
-    int offsety2 = area->y2;
-    // copy a buffer's content to a specific area of the display
-    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
+    i2c_master_write_to_device(I2C_HOST, I2C_HW_ADDR, (uint8_t *)&display_ram, sizeof(display_ram), pdMS_TO_TICKS(10));
+    lv_disp_flush_ready(drv);
 }
 
 static void oled_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
                                 lv_color_t color, lv_opa_t opa)
 {
-    uint16_t byte_index = x + ((y >> 3) * buf_w);
-    uint8_t bit_index = y & 0x7;
+    if (x > LCD_H_RES || y > LCD_V_RES)
+    {
+        return;
+    }
 
     if ((color.full == 0) && (LV_OPA_TRANSP != opa))
     {
-        buf[byte_index] |= (1 << bit_index);
+        buf[(y / 8) * 128 + x] |= 1 << (y & 0x07);
     }
     else
     {
-        buf[byte_index] &= ~(1 << bit_index);
+        buf[(y / 8) * 128 + x] &= ~(1 << (y & 0x07));
     }
 }
 
@@ -187,5 +162,5 @@ static void oled_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area)
 static void oled_increase_lvgl_tick(void *arg)
 {
     /* Tell LVGL how many milliseconds has elapsed */
-    lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
+    lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }

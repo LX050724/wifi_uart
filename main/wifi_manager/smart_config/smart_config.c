@@ -6,28 +6,29 @@
 #include "esp_wifi_types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/projdefs.h"
 #include "freertos/task.h"
 #include "wifi_manager/wifi_manager.h"
-#include <pthread.h>
 #include <stdint.h>
 #include <string.h>
 #include <strings.h>
 
 // in flag
-#define ESPTOUCH_IN_FLAGE_MASK 0x0000ffff
-#define ESPTOUCH_DONE_BIT BIT0
-#define ESPTOUCH_CANCEL0_BIT BIT1
+#define ESPTOUCH_IN_FLAG_MASK 0x00ff0000
+#define ESPTOUCH_DONE_BIT BIT16
+#define ESPTOUCH_CANCEL0_BIT BIT17
 
 // out flag
-#define ESPTOUCH_OUT_FLAGE_MASK 0xffff0000
-#define ESPTOUCH_CANCEL_BIT BIT16
-#define ESPTOUCH_SUCCESS_BIT BIT17
-#define ESPTOUCH_TIMEOUT_BIT BIT18
-#define ESPTOUCH_PWD_ERR_BIT BIT19
+#define ESPTOUCH_OUT_FLAG_MASK 0x0000ffff
+#define ESPTOUCH_CANCEL_BIT BIT0
+#define ESPTOUCH_SUCCESS_BIT BIT1
+#define ESPTOUCH_TIMEOUT_BIT BIT2
+#define ESPTOUCH_PWD_ERR_BIT BIT3
 
 static const char *TAG = "smart_config";
 
-static void *smart_config_task(void *arg);
+static TaskHandle_t smart_config_task_handle;
+static void smart_config_task(void *arg);
 
 static EventGroupHandle_t smart_config_event;
 static int s_timeout_time;
@@ -42,15 +43,21 @@ esp_err_t smart_config_start(int timeout_time)
     if (!smart_config_event)
     {
         smart_config_event = xEventGroupCreate();
+        if (smart_config_event == NULL)
+        {
+            ESP_LOGE(TAG, "xEventGroupCreate failed");
+            return ESP_FAIL;
+        }
     }
 
-    xEventGroupClearBits(smart_config_event, 0xffffffff);
+    xEventGroupClearBits(smart_config_event, 0x00ffffff);
     s_timeout_time = timeout_time * 2;
-
-    pthread_t thread;
-    pthread_create(&thread, NULL, smart_config_task, NULL);
-    pthread_detach(thread);
-
+    int ret = xTaskCreate(smart_config_task, "smart_config", 2048, NULL, 5, &smart_config_task_handle);
+    if (ret != pdPASS)
+    {
+        ESP_LOGE(TAG, "create smart_config task failed");
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -109,7 +116,7 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
     }
 }
 
-static void *smart_config_task(void *arg)
+static void smart_config_task(void *arg)
 {
     EventBits_t uxBits;
 
@@ -121,7 +128,7 @@ static void *smart_config_task(void *arg)
 
     for (; s_timeout_time > 0; s_timeout_time--)
     {
-        uxBits = xEventGroupWaitBits(smart_config_event, ESPTOUCH_IN_FLAGE_MASK, true, false, pdMS_TO_TICKS(500));
+        uxBits = xEventGroupWaitBits(smart_config_event, ESPTOUCH_IN_FLAG_MASK, true, false, pdMS_TO_TICKS(500));
         if (uxBits & ESPTOUCH_DONE_BIT)
         {
             ESP_LOGI(TAG, "smartconfig success");
@@ -152,7 +159,8 @@ static void *smart_config_task(void *arg)
     ESP_LOGI(TAG, "smartconfig over");
     esp_event_handler_unregister(SC_EVENT, ESP_EVENT_ANY_ID, &event_handler);
     esp_smartconfig_stop();
-    return NULL;
+
+    vTaskDelete(NULL);
 }
 
 int smart_config_get_timeout_time()
@@ -178,7 +186,7 @@ esp_err_t smart_config_wait(TickType_t xTicksToWait)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    uxBits = xEventGroupWaitBits(smart_config_event, ESPTOUCH_OUT_FLAGE_MASK, true, false, xTicksToWait);
+    uxBits = xEventGroupWaitBits(smart_config_event, ESPTOUCH_OUT_FLAG_MASK, true, false, xTicksToWait);
 
     if (uxBits & ESPTOUCH_SUCCESS_BIT)
     {

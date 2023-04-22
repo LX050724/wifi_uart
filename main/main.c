@@ -16,7 +16,6 @@
 #include "wifi_manager/smart_config/smart_config.h"
 #include <esp_wifi.h>
 #include <oled/oled.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
