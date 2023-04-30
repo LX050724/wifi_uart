@@ -4,7 +4,8 @@
 extern "C" {
 #endif
 
-void oled_init();
+void power_manager_init();
+void power_manager_shutdown();
 
 #ifdef __cplusplus
 }

@@ -7,6 +7,7 @@
 #include "esp_lcd_types.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/projdefs.h"
 #include "hal/lv_hal_disp.h"
 #include "widgets/lv_label.h"
 #include <sys/cdefs.h>
@@ -22,7 +23,7 @@ static const char *TAG = "OLED";
 
 #define LVGL_TICK_PERIOD_MS 2
 
-struct __packed
+static struct __packed
 {
     uint8_t head;
     uint8_t GRAM[LCD_V_RES / 8][LCD_H_RES];
@@ -31,15 +32,15 @@ struct __packed
 static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
 static lv_disp_drv_t disp_drv;      // contains callback functions
 static TaskHandle_t oled_task_handle;
-static void oled_task(void *param);
+static void display_task(void *param);
 
-static void oled_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
+static void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
                                 lv_color_t color, lv_opa_t opa);
-static void oled_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
-static void oled_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area);
-static void oled_increase_lvgl_tick(void *arg);
+static void display_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
+static void display_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area);
+static void display_increase_lvgl_tick(void *arg);
 
-uint8_t CMD_Data[] = {
+static uint8_t CMD_Data[] = {
     0x00,                // MEM ADDR
     0xAE,                // 关闭显示
     0x00,                // 设置显示时的起始列地址低四位。0
@@ -62,7 +63,7 @@ uint8_t CMD_Data[] = {
     0xAF,                // 开启显示
 };
 
-void oled_init()
+void display_init()
 {
     i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
@@ -88,15 +89,15 @@ void oled_init()
     disp_drv.hor_res = LCD_H_RES;                      // 水平大小
     disp_drv.ver_res = LCD_V_RES;                      // 垂直大小
     disp_drv.full_refresh = 1;                         // 全屏刷新
-    disp_drv.flush_cb = oled_lvgl_flush_cb;            // 刷新函数
+    disp_drv.flush_cb = display_lvgl_flush_cb;            // 刷新函数
     disp_drv.draw_buf = &disp_buf;                     // 缓冲区
-    disp_drv.rounder_cb = oled_lvgl_rounder;           //
-    disp_drv.set_px_cb = oled_lvgl_set_px_cb;          //
+    disp_drv.rounder_cb = display_lvgl_rounder;           //
+    disp_drv.set_px_cb = display_lvgl_set_px_cb;          //
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv); // 注册
 
     // 创建2ms定时器作为时钟源
     ESP_LOGI(TAG, "Install LVGL tick timer");
-    const esp_timer_create_args_t lvgl_tick_timer_args = {.callback = &oled_increase_lvgl_tick, .name = "lvgl_tick"};
+    const esp_timer_create_args_t lvgl_tick_timer_args = {.callback = &display_increase_lvgl_tick, .name = "lvgl_tick"};
     esp_timer_handle_t lvgl_tick_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000));
@@ -111,14 +112,14 @@ void oled_init()
     lv_obj_set_width(label, 150);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
 
-    int ret = xTaskCreate(oled_task, "lvgl", 2048, NULL, 5, &oled_task_handle);
-    if (ret != 0)
+    int ret = xTaskCreate(display_task, "lvgl", 2048, NULL, 5, &oled_task_handle);
+    if (ret != pdPASS)
     {
         ESP_LOGE(TAG, "create lvgl thread failed");
     }
 }
 
-static void oled_task(void *param)
+static void display_task(void *param)
 {
     TickType_t PreviousWakeTime = xTaskGetTickCount();
     while (1)
@@ -129,13 +130,13 @@ static void oled_task(void *param)
     vTaskDelete(NULL);
 }
 
-static void oled_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
+static void display_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
     i2c_master_write_to_device(I2C_HOST, I2C_HW_ADDR, (uint8_t *)&display_ram, sizeof(display_ram), pdMS_TO_TICKS(10));
     lv_disp_flush_ready(drv);
 }
 
-static void oled_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
+static void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
                                 lv_color_t color, lv_opa_t opa)
 {
     if (x > LCD_H_RES || y > LCD_V_RES)
@@ -153,13 +154,13 @@ static void oled_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_
     }
 }
 
-static void oled_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area)
+static void display_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area)
 {
     area->y1 = area->y1 & (~0x7);
     area->y2 = area->y2 | 0x7;
 }
 
-static void oled_increase_lvgl_tick(void *arg)
+static void display_increase_lvgl_tick(void *arg)
 {
     /* Tell LVGL how many milliseconds has elapsed */
     lv_tick_inc(LVGL_TICK_PERIOD_MS);

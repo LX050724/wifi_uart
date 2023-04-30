@@ -143,7 +143,7 @@ static void smart_config_task(void *arg)
             break;
         }
 
-        if (wifi_is_password_error(0))
+        if (wifi_is_password_error())
         {
             ESP_LOGE(TAG, "password error");
             xEventGroupSetBits(smart_config_event, ESPTOUCH_PWD_ERR_BIT);

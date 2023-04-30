@@ -1,28 +1,25 @@
-#include "adc/adc.h"
-#include "console/console.h"
-#include "driver/gpio.h"
 #include "driver/uart.h"
-#include "esp_err.h"
+#include "esp_event.h"
 #include "esp_log.h"
-#include "esp_netif.h"
-#include "esp_sleep.h"
-#include "esp_wifi_types.h"
-#include "freertos/portmacro.h"
 #include "hal/gpio_types.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
-#include "soc/clk_tree_defs.h"
 #include "wifi_manager/wifi_manager.h"
-#include "wifi_manager/smart_config/smart_config.h"
-#include <esp_wifi.h>
-#include <oled/oled.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/unistd.h>
+#include "wifi_manager/blufi/blufi.h"
+#include "key/key.h"
+#include "console/console.h"
+#include "display/display.h"
+#include "power/power.h"
+#include "adc/adc.h"
+
+static void nvs_init();
 
 void app_main(void)
 {
+    esp_event_loop_create_default();
+    key_init();
+    adc_init();
+    power_manager_init();
+
     /* 默认参数初始化串口 */
     uart_config_t uart_config = {};
     uart_config.baud_rate = 115200;
@@ -37,22 +34,15 @@ void app_main(void)
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, GPIO_NUM_4, GPIO_NUM_5, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
-    gpio_config_t gpio_conf = {};
-    gpio_conf.pin_bit_mask |= 1 << GPIO_NUM_1;
-    gpio_conf.mode = GPIO_MODE_INPUT;
-    gpio_conf.intr_type = GPIO_INTR_DISABLE;
-    gpio_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-    gpio_config(&gpio_conf);
+    nvs_init();
+    console_repl_init();
+    display_init();
+    wifi_init();
+    blufi_init();
+}
 
-    esp_sleep_enable_gpio_wakeup();
-    gpio_hold_en(GPIO_NUM_1);
-    esp_deep_sleep_enable_gpio_wakeup(0x02, ESP_GPIO_WAKEUP_GPIO_LOW);
-    // gpio_wakeup_enable(GPIO_NUM_1, GPIO_INTR_LOW_LEVEL);
-
-    adc_init();
-    oled_init();
-
-    /* 初始化NVS */
+static void nvs_init()
+{
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
     {
@@ -71,6 +61,7 @@ void app_main(void)
         else
         {
             uart_config_t uart_nvs_config = {};
+            uart_config_t uart_config = {};
             size_t read_size = sizeof(uart_config_t);
             err = nvs_get_blob(nvs_handle, "uart_conf", &uart_nvs_config, &read_size);
             if (err == ESP_OK && read_size == sizeof(uart_config_t))
@@ -88,11 +79,4 @@ void app_main(void)
             nvs_close(nvs_handle);
         }
     }
-
-    console_repl_init();
-    wifi_init();
-
-    wifi_wait_sta_start(portMAX_DELAY);
-    smart_config_start(300 * 1000);
-    ESP_LOGI("main", "smart_config_wait %s", esp_err_to_name(smart_config_wait(portMAX_DELAY)));
 }
