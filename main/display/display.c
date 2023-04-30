@@ -35,7 +35,7 @@ static TaskHandle_t oled_task_handle;
 static void display_task(void *param);
 
 static void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
-                                lv_color_t color, lv_opa_t opa);
+                                   lv_color_t color, lv_opa_t opa);
 static void display_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
 static void display_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area);
 static void display_increase_lvgl_tick(void *arg);
@@ -89,10 +89,10 @@ void display_init()
     disp_drv.hor_res = LCD_H_RES;                      // 水平大小
     disp_drv.ver_res = LCD_V_RES;                      // 垂直大小
     disp_drv.full_refresh = 1;                         // 全屏刷新
-    disp_drv.flush_cb = display_lvgl_flush_cb;            // 刷新函数
+    disp_drv.flush_cb = display_lvgl_flush_cb;         // 刷新函数
     disp_drv.draw_buf = &disp_buf;                     // 缓冲区
-    disp_drv.rounder_cb = display_lvgl_rounder;           //
-    disp_drv.set_px_cb = display_lvgl_set_px_cb;          //
+    disp_drv.rounder_cb = display_lvgl_rounder;        //
+    disp_drv.set_px_cb = display_lvgl_set_px_cb;       //
     lv_disp_t *disp = lv_disp_drv_register(&disp_drv); // 注册
 
     // 创建2ms定时器作为时钟源
@@ -137,7 +137,7 @@ static void display_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
 }
 
 static void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
-                                lv_color_t color, lv_opa_t opa)
+                                   lv_color_t color, lv_opa_t opa)
 {
     if (x > LCD_H_RES || y > LCD_V_RES)
     {

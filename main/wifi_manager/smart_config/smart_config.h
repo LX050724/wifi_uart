@@ -8,10 +8,10 @@ extern "C" {
 esp_err_t smart_config_start(int timeout_time);
 
 /**
- * @brief 
- * 
- * @param xTicksToWait 
- * @return esp_err_t 
+ * @brief
+ *
+ * @param xTicksToWait
+ * @return esp_err_t
  */
 esp_err_t smart_config_wait(TickType_t xTicksToWait);
 

@@ -1,11 +1,11 @@
 #include "argtable3/argtable3.h"
+#include "console.h"
 #include "driver/uart.h"
 #include "esp_console.h"
 #include "esp_log.h"
 #include "hal/uart_types.h"
 #include "nvs.h"
 #include <string.h>
-#include "console.h"
 
 static struct
 {

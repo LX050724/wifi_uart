@@ -1,15 +1,15 @@
+#include "adc/adc.h"
+#include "console/console.h"
+#include "display/display.h"
 #include "driver/uart.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "hal/gpio_types.h"
-#include "nvs_flash.h"
-#include "wifi_manager/wifi_manager.h"
-#include "wifi_manager/blufi/blufi.h"
 #include "key/key.h"
-#include "console/console.h"
-#include "display/display.h"
+#include "nvs_flash.h"
 #include "power/power.h"
-#include "adc/adc.h"
+#include "wifi_manager/blufi/blufi.h"
+#include "wifi_manager/wifi_manager.h"
 
 static void nvs_init();
 

@@ -14,7 +14,6 @@
 #define GPIO (*(gpio_dev_t *)0x60004000)
 #define gpio_read_pin(NUM) ((GPIO.in.data >> (NUM)) & 0x1)
 
-
 static void power_manager_deep_sleep()
 {
     /* 重置GPIO0 */

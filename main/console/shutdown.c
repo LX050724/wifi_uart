@@ -1,9 +1,9 @@
+#include "console.h"
 #include "esp_console.h"
 #include "esp_sleep.h"
+#include "power/power.h"
 #include <stdio.h>
 #include <sys/unistd.h>
-#include "power/power.h"
-#include "console.h"
 
 static int shutdown_cmd_cb(int argc, char **argv)
 {
