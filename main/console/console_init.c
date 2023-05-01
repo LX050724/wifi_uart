@@ -18,6 +18,9 @@
 
 void register_set_uart();
 void register_shutdown();
+void register_set_name();
+void register_system();
+void register_battery_cmd();
 
 typedef struct
 {
@@ -61,6 +64,9 @@ int console_repl_init()
     esp_console_register_help_command();
     register_set_uart();
     register_shutdown();
+    register_set_name();
+    register_system();
+    register_battery_cmd();
 
 #if defined(CONFIG_ESP_CONSOLE_UART_DEFAULT) || defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
     esp_console_dev_uart_config_t hw_config = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();

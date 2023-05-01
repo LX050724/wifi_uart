@@ -1,10 +1,14 @@
 #include "blufi_private.h"
+#include "config/config.h"
 #include "console/console.h"
 #include "esp_blufi.h"
 #include "esp_blufi_api.h"
 #include "esp_bt.h"
+#include "esp_bt_device.h"
+#include "esp_err.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
+#include "events/events.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "wifi_manager/wifi_manager.h"
@@ -26,6 +30,28 @@ static esp_blufi_callbacks_t example_callbacks = {
     .encrypt_func = blufi_aes_encrypt,
     .decrypt_func = blufi_aes_decrypt,
     .checksum_func = blufi_crc_checksum,
+};
+
+static uint8_t blufi_service_uuid128[32] = {
+    /* LSB <--------------------------------------------------------------------------------> MSB */
+    // first uuid, 16bit, [12],[13] is the value
+    0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80, 0x00, 0x10, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00,
+};
+
+static esp_ble_adv_data_t blufi_adv_data = {
+    .set_scan_rsp = false,
+    .include_name = true,
+    .include_txpower = true,
+    .min_interval = 0x0006, // slave connection min interval, Time = min_interval * 1.25 msec
+    .max_interval = 0x0010, // slave connection max interval, Time = max_interval * 1.25 msec
+    .appearance = 0x00,
+    .manufacturer_len = 0,
+    .p_manufacturer_data = NULL,
+    .service_data_len = 0,
+    .p_service_data = NULL,
+    .service_uuid_len = 16,
+    .p_service_uuid = blufi_service_uuid128,
+    .flag = 0x6,
 };
 
 static int softap_get_current_connection_number(void)
@@ -52,14 +78,22 @@ static void blufi_cmd_task(void *unused)
     }
 }
 
+static void blufi_adv_start()
+{
+    char name[32] = {};
+    strcpy(name, "BLUFI_");
+    conf_get_dev_name(name + 6, sizeof(name) - 6);
+    esp_ble_gap_set_device_name(name);
+    esp_ble_gap_config_adv_data(&blufi_adv_data);
+}
+
 static void example_event_callback(esp_blufi_cb_event_t event, esp_blufi_cb_param_t *param)
 {
     switch (event)
     {
     case ESP_BLUFI_EVENT_INIT_FINISH:
         BLUFI_INFO("BLUFI init finish");
-
-        esp_blufi_adv_start();
+        blufi_adv_start();
         break;
     case ESP_BLUFI_EVENT_DEINIT_FINISH:
         BLUFI_INFO("BLUFI deinit finish");
@@ -74,7 +108,7 @@ static void example_event_callback(esp_blufi_cb_event_t event, esp_blufi_cb_para
         BLUFI_INFO("BLUFI ble disconnect");
         ble_is_connected = false;
         blufi_security_deinit();
-        esp_blufi_adv_start();
+        blufi_adv_start();
         break;
     case ESP_BLUFI_EVENT_SET_WIFI_OPMODE:
         BLUFI_INFO("BLUFI Set WIFI opmode %d", param->wifi_mode.op_mode);

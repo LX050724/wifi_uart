@@ -5,27 +5,37 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_private/adc_share_hw_ctrl.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "hal/adc_types.h"
 #include "hal/gpio_types.h"
 #include <stdbool.h>
 
+#define TAG "ADC"
+
 static adc_oneshot_unit_handle_t adc1_handle;
 static adc_cali_handle_t adc1_cali_handle;
-
-#define TAG "ADC"
+static const float capacity_table[12][2] = {
+    {0, 3.5},   {9, 3.68},  {18, 3.7},  {27, 3.73}, {36, 3.77}, {45, 3.79},
+    {55, 3.82}, {64, 3.87}, {73, 3.93}, {82, 4},    {91, 4.08}, {100, 4.2},
+};
 
 static bool adc_calibration_init(adc_unit_t unit, adc_atten_t atten, adc_cali_handle_t *out_handle);
 
 int adc_init()
 {
     gpio_config_t gpio_conf = {};
-    gpio_conf.pin_bit_mask |= 1 << GPIO_NUM_10;
+    gpio_conf.pin_bit_mask = 1 << GPIO_NUM_10;
     gpio_conf.mode = GPIO_MODE_OUTPUT;
     gpio_conf.intr_type = GPIO_INTR_DISABLE;
     gpio_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     gpio_config(&gpio_conf);
     gpio_set_level(GPIO_NUM_10, 1);
+
+    gpio_conf.pin_bit_mask = 1 << GPIO_NUM_1;
+    gpio_conf.mode = GPIO_MODE_INPUT;
+    gpio_config(&gpio_conf);
 
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
@@ -116,4 +126,36 @@ int adc_read_bat_voltage_mv()
     }
 
     return ret == ESP_OK ? vlotage * 2 : -1;
+}
+
+float adc_read_bat_capacity()
+{
+    float vlotage = 0;
+    for (int i = 0; i < 5; i++)
+    {
+        vlotage += adc_read_bat_voltage_mv();
+        vTaskDelay(1);
+    }
+    vlotage /= 5000;
+
+    if (vlotage < 3.5)
+        return 0;
+    if (vlotage > 4.2)
+        return 100;
+
+    for (int i = 0; i < 11; i++)
+    {
+        if (vlotage >= capacity_table[i][1] && vlotage < capacity_table[i + 1][1])
+        {
+            return (vlotage - capacity_table[i][1]) / (capacity_table[i + 1][1] - capacity_table[i][1]) *
+                       (capacity_table[i + 1][0] - capacity_table[i][0]) +
+                   capacity_table[i][0];
+        }
+    }
+    return 0;
+}
+
+bool adc_bat_is_charging()
+{
+    return gpio_get_level(GPIO_NUM_1);
 }

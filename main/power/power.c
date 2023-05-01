@@ -2,8 +2,12 @@
 #include "driver/gpio.h"
 #include "esp_bt.h"
 #include "esp_event.h"
+#include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_wifi.h"
+#include "events/events.h"
+#include "freertos/portmacro.h"
+#include "freertos/projdefs.h"
 #include "hal/gpio_ll.h"
 #include "hal/gpio_types.h"
 #include "key/key.h"
@@ -11,13 +15,11 @@
 #include "wifi_manager/blufi/blufi_private.h"
 #include <sys/unistd.h>
 
-#define GPIO (*(gpio_dev_t *)0x60004000)
-#define gpio_read_pin(NUM) ((GPIO.in.data >> (NUM)) & 0x1)
-
 static void power_manager_deep_sleep()
 {
     /* 重置GPIO0 */
     gpio_reset_pin(GPIO_NUM_0);
+    gpio_reset_pin(GPIO_NUM_1);
 
     gpio_deep_sleep_hold_dis();
     esp_sleep_enable_gpio_wakeup();
@@ -34,8 +36,27 @@ static void power_manager_deep_sleep()
     esp_deep_sleep_start();
 }
 
+static TaskHandle_t power_monitor_task_handle;
+static void power_monitor_task(void *arg)
+{
+    int last_power_status = 0;
+    while (true)
+    {
+        int power_status = adc_bat_is_charging();
+        if (last_power_status != power_status)
+        {
+            app_event_post(power_status ? APP_EVENT_POWER_ON : APP_EVENT_POWER_DOWN, NULL, 0, portMAX_DELAY);
+        }
+        last_power_status = power_status;
+        float bat_capacity = adc_read_bat_capacity();
+        ESP_LOGI("power", "bat_capacity=%.1f %d", bat_capacity, adc_read_bat_voltage_mv());
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
 void power_manager_init()
 {
+    xTaskCreate(power_monitor_task, "power_monitor", 2048, NULL, 1, &power_monitor_task_handle);
 }
 
 void power_manager_shutdown()

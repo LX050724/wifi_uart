@@ -56,7 +56,7 @@ esp_err_t key_init()
 
     mutex = xSemaphoreCreateMutex();
 
-    xTaskCreate(key_scan_task, "key_scan", 2048, NULL, 2, &key_scan_task_handel);
+    xTaskCreate(key_scan_task, "key_scan", 512, NULL, 2, &key_scan_task_handel);
     return ESP_OK;
 }
 

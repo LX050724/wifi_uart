@@ -24,7 +24,7 @@ static int set_uart_cmd_cb(int argc, char **argv)
     if (err != ESP_OK)
     {
         ESP_LOGE("NVS", "NVS open field %s", esp_err_to_name(err));
-        return 1;
+        return ESP_OK;
     }
     uart_config_t uart_nvs_config = {};
     size_t read_size = sizeof(uart_config_t);
@@ -45,7 +45,7 @@ static int set_uart_cmd_cb(int argc, char **argv)
         {
             console_printf("\n错误：无法设置波特率%d，实际波特率%d\n", uart_cmd_args.baud->ival[0], baud);
             uart_set_baudrate(UART_NUM_1, baud_old);
-            return 1;
+            goto exit;
         }
     }
 
@@ -55,7 +55,7 @@ static int set_uart_cmd_cb(int argc, char **argv)
         if (word_length < 0 || word_length >= UART_DATA_BITS_MAX)
         {
             console_printf("\n错误：字长仅支持5到8比特\n");
-            return 1;
+            goto exit;
         }
         uart_set_word_length(UART_NUM_1, word_length);
         console_printf("，字长：%d ", uart_cmd_args.word_length->ival[0]);
@@ -81,7 +81,7 @@ static int set_uart_cmd_cb(int argc, char **argv)
         else
         {
             console_printf("\n错误：停止位仅支持1，1.5，2比特\n");
-            return 1;
+            goto exit;
         }
         uart_set_stop_bits(UART_NUM_1, stop_bits);
         console_printf("，停止位：%.1lf ", uart_cmd_args.stop_bits->dval[0]);
@@ -105,7 +105,7 @@ static int set_uart_cmd_cb(int argc, char **argv)
         else
         {
             console_printf("\n错误：校验方式仅支持无校验DIS，奇校验ODD，偶校验EVEN\n");
-            return 1;
+            goto exit;
         }
         console_printf("，校验方式：%s ", uart_cmd_args.parity->sval[0]);
         uart_set_parity(UART_NUM_1, parity);
@@ -117,10 +117,12 @@ static int set_uart_cmd_cb(int argc, char **argv)
     if (err != ESP_OK)
     {
         console_printf("错误：无法保存配置 %s\n", esp_err_to_name(err));
-        return 1;
+        goto exit;
     }
+
+exit:
     nvs_close(nvs_handle);
-    return 0;
+    return ESP_OK;
 }
 
 void register_set_uart()
@@ -132,7 +134,7 @@ void register_set_uart()
     uart_cmd_args.end = arg_end(4);
 
     const esp_console_cmd_t cmd = {
-        .command = "set_uart",
+        .command = "set-uart",
         .help = "设置远程串口波特率等配置",
         .hint = NULL,
         .func = set_uart_cmd_cb,
