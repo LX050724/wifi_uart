@@ -17,6 +17,15 @@ static struct
 static int set_name_cmd_cb(int argc, char **argv)
 {
     arg_parse(argc, argv, (void **)&name_cmd_args);
+    const char *p = name_cmd_args.name->sval[0];
+    do {
+        if (*p < 0x20 || *p > 0x7e)
+        {
+            console_printf("名称包含非法字符 \\x%02x\n", *p);
+            return ESP_OK;
+        }
+    } while (*++p != 0);
+
     esp_err_t err = conf_set_dev_name(name_cmd_args.name->sval[0]);
     if (err != ESP_OK)
     {

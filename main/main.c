@@ -11,15 +11,16 @@
 #include "power/power.h"
 #include "wifi_manager/blufi/blufi.h"
 #include "wifi_manager/wifi_manager.h"
+#include "telnet/telnet_server.h"
 
 static int nvs_init();
 
 void app_main(void)
 {
-    esp_event_loop_create_default();
     key_init();
     adc_init();
     power_manager_init();
+    esp_event_loop_create_default();
     nvs_init();
 
     /* 默认参数初始化串口 */
@@ -33,6 +34,7 @@ void app_main(void)
     display_init();
     wifi_init();
     blufi_init();
+    telnet_init();
 }
 
 static int nvs_init()

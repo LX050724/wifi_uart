@@ -9,7 +9,7 @@ static int shutdown_cmd_cb(int argc, char **argv)
 {
     console_printf("30s 后进入休眠，请断开供电\n");
     sleep(30);
-    power_manager_shutdown();
+    power_manager_shutdown(true);
     return 0;
 }
 
