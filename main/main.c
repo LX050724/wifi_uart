@@ -12,9 +12,9 @@
 #include "wifi_manager/blufi/blufi.h"
 #include "wifi_manager/wifi_manager.h"
 #include "telnet/telnet_server.h"
+#include "usr_uart/usr_uart.h"
 
 static int nvs_init();
-
 void app_main(void)
 {
     key_init();
@@ -23,13 +23,7 @@ void app_main(void)
     esp_event_loop_create_default();
     nvs_init();
 
-    /* 默认参数初始化串口 */
-    uart_config_t uart_config = {};
-    conf_get_uart_param(&uart_config);
-    uart_driver_install(UART_NUM_1, 1024, 1024, 0, NULL, 0);
-    uart_param_config(UART_NUM_1, &uart_config);
-    uart_set_pin(UART_NUM_1, GPIO_NUM_4, GPIO_NUM_5, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-
+    usr_uart_init();
     console_repl_init();
     display_init();
     wifi_init();

@@ -82,7 +82,7 @@ int conf_get_uart_param(uart_config_t *uart_config)
         uart_config->stop_bits = UART_STOP_BITS_1;
         uart_config->flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
         uart_config->parity = UART_PARITY_DISABLE;
-        uart_config->source_clk = UART_SCLK_APB;
+        uart_config->source_clk = UART_SCLK_DEFAULT;
         uart_config->rx_flow_ctrl_thresh = 122;
         err = nvs_set_blob(nvs_handle, "uart_conf", uart_config, sizeof(uart_config_t));
         if (err != ESP_OK)

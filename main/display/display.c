@@ -93,7 +93,7 @@ void display_init()
     disp_drv.draw_buf = &disp_buf;                     // 缓冲区
     disp_drv.rounder_cb = display_lvgl_rounder;        //
     disp_drv.set_px_cb = display_lvgl_set_px_cb;       //
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv); // 注册
+    lv_disp_drv_register(&disp_drv); // 注册
 
     // 创建2ms定时器作为时钟源
     ESP_LOGI(TAG, "Install LVGL tick timer");

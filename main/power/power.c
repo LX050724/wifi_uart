@@ -1,3 +1,4 @@
+#include "power.h"
 #include "adc/adc.h"
 #include "driver/gpio.h"
 #include "esp_bt.h"
@@ -45,13 +46,18 @@ static void power_monitor_task(void *arg)
     int last_power_status = 0;
     while (true)
     {
-        int power_status = adc_bat_is_charging();
-        if (last_power_status != power_status)
+        int charging = adc_bat_is_charging();
+        if (last_power_status != charging)
         {
-            app_event_post(power_status ? APP_EVENT_POWER_ON : APP_EVENT_POWER_DOWN, NULL, 0, portMAX_DELAY);
+            app_event_post(charging ? APP_EVENT_POWER_ON : APP_EVENT_POWER_DOWN, NULL, 0, portMAX_DELAY);
         }
-        last_power_status = power_status;
+        last_power_status = charging;
         float bat_capacity = adc_read_bat_capacity();
+
+        if (!charging && bat_capacity <= 0)
+        {
+            power_manager_shutdown(false);
+        }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
