@@ -1,15 +1,10 @@
-#include "core/lv_disp.h"
-#include "core/lv_obj.h"
 #include "driver/i2c.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_vendor.h"
-#include "esp_lcd_types.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "freertos/projdefs.h"
-#include "hal/lv_hal_disp.h"
-#include "widgets/lv_label.h"
+#include "key/key.h"
+#include "lvgl.h"
+#include <stdint.h>
+#include <string.h>
 #include <sys/cdefs.h>
 
 static const char *TAG = "OLED";
@@ -23,20 +18,26 @@ static const char *TAG = "OLED";
 
 #define LVGL_TICK_PERIOD_MS 2
 
-static struct __packed
+typedef struct
 {
-    uint8_t head;
+    int head;
     uint8_t GRAM[LCD_V_RES / 8][LCD_H_RES];
-} display_ram;
+} DisplayRAM;
+
+DisplayRAM display_ram;
+DisplayRAM display_ram2;
 
 static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
 static lv_disp_drv_t disp_drv;      // contains callback functions
+static lv_indev_drv_t indev_drv;
 static TaskHandle_t oled_task_handle;
 static void display_task(void *param);
 
 static void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
                                    lv_color_t color, lv_opa_t opa);
 static void display_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map);
+static void display_lvgl_key_scan(struct _lv_indev_drv_t *indev_drv, lv_indev_data_t *data);
+
 static void display_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area);
 static void display_increase_lvgl_tick(void *arg);
 
@@ -81,7 +82,7 @@ void display_init()
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
 
-    display_ram.head = 0x40;
+    display_ram.head = 0x40404040;
     lv_disp_draw_buf_init(&disp_buf, display_ram.GRAM, NULL, LCD_H_RES * LCD_V_RES);
 
     ESP_LOGI(TAG, "Register display driver to LVGL");
@@ -93,7 +94,22 @@ void display_init()
     disp_drv.draw_buf = &disp_buf;                     // 缓冲区
     disp_drv.rounder_cb = display_lvgl_rounder;        //
     disp_drv.set_px_cb = display_lvgl_set_px_cb;       //
-    lv_disp_drv_register(&disp_drv); // 注册
+    lv_disp_t *disp = lv_disp_drv_register(&disp_drv); // 注册
+
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.disp = disp;
+    // indev_drv.long_press_time = 500;
+    // indev_drv.long_press_repeat_time = 1000;
+    indev_drv.type = LV_INDEV_TYPE_KEYPAD;
+    indev_drv.read_cb = display_lvgl_key_scan;
+    lv_indev_t *indev = lv_indev_drv_register(&indev_drv);
+
+    lv_group_t *group = lv_group_create();
+    lv_group_set_default(group);
+    lv_indev_set_group(indev, group);
+
+    void main_page_init();
+    main_page_init();
 
     // 创建2ms定时器作为时钟源
     ESP_LOGI(TAG, "Install LVGL tick timer");
@@ -104,7 +120,7 @@ void display_init()
 
     ESP_LOGI(TAG, "Display LVGL Scroll Text");
 
-    int ret = xTaskCreate(display_task, "lvgl", 2048, NULL, 5, &oled_task_handle);
+    int ret = xTaskCreate(display_task, "lvgl", 8192, NULL, 5, &oled_task_handle);
     if (ret != pdPASS)
     {
         ESP_LOGE(TAG, "create lvgl thread failed");
@@ -117,36 +133,34 @@ static void display_task(void *param)
     while (1)
     {
         lv_timer_handler();
-        xTaskDelayUntil(&PreviousWakeTime, pdMS_TO_TICKS(20));
+        xTaskDelayUntil(&PreviousWakeTime, pdMS_TO_TICKS(30));
     }
     vTaskDelete(NULL);
 }
 
 static void display_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
-    i2c_master_write_to_device(I2C_HOST, I2C_HW_ADDR, (uint8_t *)&display_ram, sizeof(display_ram), pdMS_TO_TICKS(10));
+    i2c_master_write_to_device(I2C_HOST, I2C_HW_ADDR, ((uint8_t *)&display_ram) + 3, sizeof(display_ram) - 3,
+                               pdMS_TO_TICKS(10));
     lv_disp_flush_ready(drv);
 }
 
-static void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x, lv_coord_t y,
-                                   lv_color_t color, lv_opa_t opa)
+static IRAM_ATTR void display_lvgl_set_px_cb(lv_disp_drv_t *disp_drv, uint8_t *buf, lv_coord_t buf_w, lv_coord_t x,
+                                             lv_coord_t y, lv_color_t color, lv_opa_t opa)
 {
-    if (x > LCD_H_RES || y > LCD_V_RES)
+    uint8_t(*GRAM)[128] = (uint8_t(*)[128])buf;
+    uint8_t bit = 1 << (y & 0x7);
+    if (color.full == 0)
     {
-        return;
-    }
-
-    if ((color.full == 0) && (LV_OPA_TRANSP != opa))
-    {
-        buf[(y / 8) * 128 + x] |= 1 << (y & 0x07);
+        GRAM[y / 8][x] &= ~bit;
     }
     else
     {
-        buf[(y / 8) * 128 + x] &= ~(1 << (y & 0x07));
+        GRAM[y / 8][x] |= bit;
     }
 }
 
-static void display_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area)
+static IRAM_ATTR void display_lvgl_rounder(lv_disp_drv_t *disp_drv, lv_area_t *area)
 {
     area->y1 = area->y1 & (~0x7);
     area->y2 = area->y2 | 0x7;
@@ -156,4 +170,78 @@ static void display_increase_lvgl_tick(void *arg)
 {
     /* Tell LVGL how many milliseconds has elapsed */
     lv_tick_inc(LVGL_TICK_PERIOD_MS);
+}
+
+// static void display_lvgl_key_scan(struct _lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
+// {
+//     data->state = key_up_button_pressed();
+// }
+
+static void display_lvgl_key_scan(struct _lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
+{
+    static bool up_key = false;
+    static bool up_key_last = false;
+    static TickType_t up_key_pressed_time = 0;
+
+    static bool down_key = false;
+    static bool down_key_last = false;
+    static TickType_t down_key_pressed_time = 0;
+
+    up_key = key_up_button_pressed();
+    down_key = key_down_button_pressed();
+    data->state = LV_INDEV_STATE_RELEASED;
+    data->key = 0;
+    if (up_key != up_key_last)
+    {
+        if (up_key)
+        {
+            /* 上按键按下 */
+            up_key_pressed_time = 1;
+        }
+        else
+        {
+            /* 上按键抬起 */
+            if (up_key_pressed_time < 20)
+                data->key = LV_KEY_PREV;
+            else if (up_key_pressed_time < 100)
+                data->key = LV_KEY_ENTER;
+            up_key_pressed_time = 0;
+        }
+    }
+    else if (up_key)
+    {
+        /* 上按键持续按下 */
+        up_key_pressed_time++;
+    }
+
+    if (down_key != down_key_last)
+    {
+        if (down_key)
+        {
+            /* 下按键按下 */
+            down_key_pressed_time = 1;
+        }
+        else
+        {
+            /* 下按键抬起 */
+            if (down_key_pressed_time < 20)
+                data->key = LV_KEY_NEXT;
+            else if (down_key_pressed_time < 100)
+                data->key = LV_KEY_ESC;
+            down_key_pressed_time = 0;
+        }
+    }
+    else if (down_key)
+    {
+        /* 下按键持续按下 */
+        down_key_pressed_time++;
+    }
+
+    if (data->key)
+    {
+        data->state = LV_INDEV_STATE_PRESSED;
+        ESP_LOGI(TAG, "Key %d", (int)data->key);
+    }
+    up_key_last = up_key;
+    down_key_last = down_key;
 }

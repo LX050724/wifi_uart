@@ -14,6 +14,7 @@
 #include "key/key.h"
 #include "soc/gpio_struct.h"
 #include "wifi_manager/blufi/blufi_private.h"
+#include <stdbool.h>
 #include <sys/unistd.h>
 
 static void power_manager_deep_sleep(bool power_wakeup)
@@ -71,6 +72,14 @@ void power_manager_init()
         power_manager_deep_sleep(false);
     }
 
+    gpio_config_t gpio_conf = {};
+    gpio_conf.pin_bit_mask |= 1 << GPIO_NUM_2;
+    gpio_conf.mode = GPIO_MODE_OUTPUT;
+    gpio_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&gpio_conf);
+
+    power_oled_power_ctl(true);
     xTaskCreate(power_monitor_task, "power_monitor", 2048, NULL, 1, &power_monitor_task_handle);
 }
 
@@ -78,5 +87,11 @@ void power_manager_shutdown(bool power_wakeup)
 {
     esp_wifi_stop();
     esp_blufi_host_deinit();
+    power_oled_power_ctl(false);
     power_manager_deep_sleep(power_wakeup);
+}
+
+void power_oled_power_ctl(bool power)
+{
+    gpio_set_level(GPIO_NUM_2, power ? 0 : 1);
 }

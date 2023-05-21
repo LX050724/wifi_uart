@@ -7,6 +7,7 @@ extern "C" {
 
 void power_manager_init();
 void power_manager_shutdown(bool power_wakeup);
+void power_oled_power_ctl(bool power);
 
 #ifdef __cplusplus
 }
