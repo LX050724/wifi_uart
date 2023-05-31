@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/_default_fcntl.h>
+#include <sys/errno.h>
 #include <sys/select.h>
 #include <sys/unistd.h>
 
@@ -223,7 +224,7 @@ static void telnet_worker()
                         {
                             client_fds[i].fd = fd;
                             inet_ntoa_r(inaddr.sin_addr, client_fds[i].ip_str, sizeof(client_fds[i].ip_str));
-                            lwip_send(fd, telnet_ctrl, sizeof(telnet_ctrl), 0);
+                            lwip_send(fd, telnet_ctrl, sizeof(telnet_ctrl), MSG_DONTWAIT);
                             fd = 0;
                             break;
                         }
@@ -256,10 +257,14 @@ static void telnet_worker()
                 TelnetConnect_t *client = &client_fds[i];
                 if (FD_ISSET(client->fd, &rfds))
                 {
-                    int rd_len = lwip_read(client->fd, read_buf, sizeof(read_buf));
-                    if (rd_len == -1)
+                    int rd_len = lwip_recv(client->fd, read_buf, sizeof(read_buf), MSG_DONTWAIT);
+                    if (rd_len <= 0)
                     {
-                        ESP_LOGI(TAG, "%d:%s disconnected", client->fd, client->ip_str);
+                        if (errno == EWOULDBLOCK)
+                        {
+                            continue;
+                        }
+                        ESP_LOGI(TAG, "%d:%s disconnected %s", client->fd, client->ip_str, strerror(errno));
                         lwip_shutdown(client->fd, SHUT_RD);
                         lwip_close(client->fd);
                         client->fd = -1;
