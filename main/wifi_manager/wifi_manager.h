@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esp_netif_types.h"
 #include "esp_wifi_types.h"
 #include "freertos/portmacro.h"
 
@@ -39,6 +40,7 @@ esp_err_t wifi_set_ap_max_conn(int max_conn_num);
 esp_err_t wifi_set_ap_auth(wifi_auth_mode_t mode);
 esp_err_t wifi_set_ap_channel(uint8_t channel);
 void wifi_get_ssid_bssid(uint8_t bssid[6], uint8_t *ssid, int *len);
+void wifi_get_ip_info(esp_netif_ip_info_t *ip);
 
 #ifdef __cplusplus
 }

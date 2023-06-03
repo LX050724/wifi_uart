@@ -4,6 +4,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_types.h"
 #include "esp_smartconfig.h"
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
@@ -11,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "lwip/inet.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,19 +33,43 @@ static uint8_t wifi_retry_count = 0;
 static uint8_t gl_sta_bssid[6];
 static uint8_t gl_sta_ssid[32];
 static int gl_sta_ssid_len;
+static esp_netif_ip_info_t ip_info;
 
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    if (event_base == IP_EVENT)
+    switch (event_id)
     {
-        if (event_id == IP_EVENT_STA_GOT_IP)
-        {
-            ESP_LOGI(TAG, "got ip");
-            xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT | GOT_IP_BIT);
-        }
-        return;
+    case IP_EVENT_STA_GOT_IP: {
+        ip_event_got_ip_t *event = event_data;
+        char ip[16], gw[16], mask[16];
+        inet_ntoa_r(event->ip_info.ip.addr, ip, sizeof(ip));
+        inet_ntoa_r(event->ip_info.gw.addr, gw, sizeof(gw));
+        inet_ntoa_r(event->ip_info.netmask.addr, mask, sizeof(mask));
+        ip_info = event->ip_info;
+        ESP_LOGI(TAG, "got ip:%s gw:%s mask:%s", ip, gw, mask);
+        xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT | GOT_IP_BIT);
+        break;
     }
-    /* event_base == WIFI_EVENT */
+    case IP_EVENT_GOT_IP6: {
+        ip_event_got_ip6_t *event = event_data;
+        // ESP_LOGI(TAG, "got ip:%s gw:%s mask:%s", ip, gw, mask);
+        break;
+    }
+    case IP_EVENT_STA_LOST_IP: {
+        memset(&ip_info, 0, sizeof(esp_netif_ip_info_t));
+        break;
+    }
+    case IP_EVENT_AP_STAIPASSIGNED:
+    case IP_EVENT_ETH_GOT_IP:
+    case IP_EVENT_ETH_LOST_IP:
+    case IP_EVENT_PPP_GOT_IP:
+    case IP_EVENT_PPP_LOST_IP:
+        break;
+    }
+}
+
+static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
     switch (event_id)
     {
     case WIFI_EVENT_STA_START: {
@@ -212,6 +238,13 @@ void wifi_get_ssid_bssid(uint8_t bssid[6], uint8_t *ssid, int *len)
     }
 }
 
+void wifi_get_ip_info(esp_netif_ip_info_t *ip)
+{
+    if (ip == NULL)
+        return;
+    *ip = ip_info;
+}
+
 int wifi_init()
 {
     s_wifi_event_group = xEventGroupCreate();
@@ -222,8 +255,8 @@ int wifi_init()
     wifi_init_config_t wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&wifi_init_config);
 
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL);
-    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &ip_event_handler, NULL);
 
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_start();
