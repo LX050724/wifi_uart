@@ -107,3 +107,63 @@ int conf_set_uart_param(uart_config_t *uart_config)
     nvs_close(nvs_handle);
     return err;
 }
+
+int conf_set_wifi_ssid(const char *ssid)
+{
+    nvs_handle_t nvs_handle = 0;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("NVS", "NVS open field %s", esp_err_to_name(err));
+        return err;
+    }
+    err = nvs_set_str(nvs_handle, "wifi_ssid", ssid);
+    nvs_close(nvs_handle);
+    return err;
+}
+
+int conf_get_wifi_ssid(char *ssid, size_t len)
+{
+    nvs_handle_t nvs_handle = 0;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("NVS", "NVS open field %s", esp_err_to_name(err));
+        return err;
+    }
+
+    size_t _len = len;
+    err = nvs_get_str(nvs_handle, "wifi_ssid", ssid, &_len);
+    nvs_close(nvs_handle);
+    return err;
+}
+
+int conf_set_wifi_passwd(const char *passwd)
+{
+    nvs_handle_t nvs_handle = 0;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("NVS", "NVS open field %s", esp_err_to_name(err));
+        return err;
+    }
+    err = nvs_set_str(nvs_handle, "wifi_passwd", passwd);
+    nvs_close(nvs_handle);
+    return err;
+}
+
+int conf_get_wifi_passwd(char *passwd, size_t len)
+{
+    nvs_handle_t nvs_handle = 0;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("NVS", "NVS open field %s", esp_err_to_name(err));
+        return err;
+    }
+
+    size_t _len = len;
+    err = nvs_get_str(nvs_handle, "wifi_passwd", passwd, &_len);
+    nvs_close(nvs_handle);
+    return err;
+}

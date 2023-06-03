@@ -1,4 +1,5 @@
 #include "wifi_manager/wifi_manager.h"
+#include "config/config.h"
 #include "esp_blufi_api.h"
 #include "esp_err.h"
 #include "esp_event.h"
@@ -87,6 +88,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         memcpy(gl_sta_bssid, event->bssid, 6);
         memcpy(gl_sta_ssid, event->ssid, event->ssid_len);
         gl_sta_ssid_len = event->ssid_len;
+        conf_set_wifi_ssid((char *)sta_config.sta.ssid);
+        conf_set_wifi_passwd((char *)sta_config.sta.password);
         xEventGroupSetBits(s_wifi_event_group, CONNECTED_BIT);
         xEventGroupClearBits(s_wifi_event_group, PASSWORD_ERROR | CONNECTING_BIT);
         break;
@@ -260,6 +263,15 @@ int wifi_init()
 
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_start();
+
+    if (conf_get_wifi_ssid((char *)sta_config.sta.ssid, sizeof(sta_config.sta.ssid)) == ESP_OK &&
+        conf_get_wifi_passwd((char *)sta_config.sta.password, sizeof(sta_config.sta.password)) == ESP_OK)
+    {
+        if (esp_wifi_set_config(WIFI_IF_STA, &sta_config) == ESP_OK)
+        {
+            wifi_connect();
+        }
+    }
 
     return ESP_OK;
 }
