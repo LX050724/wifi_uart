@@ -14,7 +14,7 @@ esp_err_t usr_uart_init()
     conf_get_uart_param(&uart_config);
     uart_driver_install(UART_NUM_1, 1024, 1024, 20, &uart_queue, 0);
     uart_param_config(UART_NUM_1, &uart_config);
-    uart_set_pin(UART_NUM_1, GPIO_NUM_4, GPIO_NUM_5, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_set_pin(UART_NUM_1, GPIO_NUM_5, GPIO_NUM_4, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
     return ESP_OK;
 }
