@@ -60,11 +60,8 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t eve
         memset(&ip_info, 0, sizeof(esp_netif_ip_info_t));
         break;
     }
-    case IP_EVENT_AP_STAIPASSIGNED:
-    case IP_EVENT_ETH_GOT_IP:
-    case IP_EVENT_ETH_LOST_IP:
-    case IP_EVENT_PPP_GOT_IP:
-    case IP_EVENT_PPP_LOST_IP:
+    default:
+        ESP_LOGI(TAG, "ip event %d", (int)event_id);
         break;
     }
 }
@@ -96,9 +93,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     }
     case WIFI_EVENT_STA_DISCONNECTED: {
         /* Only handle reconnection during connecting */
+        wifi_event_sta_disconnected_t *disconnected_event = (wifi_event_sta_disconnected_t *)event_data;
+        ESP_LOGE(TAG, "wifi disconnected reason=%d", disconnected_event->reason);
         if (!wifi_wait_connect(0) && wifi_reconnect() == false)
         {
-            wifi_event_sta_disconnected_t *disconnected_event = (wifi_event_sta_disconnected_t *)event_data;
             record_wifi_conn_info(disconnected_event->rssi, disconnected_event->reason);
             xEventGroupClearBits(s_wifi_event_group, CONNECTING_BIT);
         }
@@ -106,8 +104,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
            auto-reassociate. */
         memset(gl_sta_ssid, 0, sizeof(gl_sta_ssid));
         memset(gl_sta_bssid, 0, sizeof(gl_sta_bssid));
+        memset(&ip_info, 0, sizeof(ip_info));
         gl_sta_ssid_len = 0;
         xEventGroupClearBits(s_wifi_event_group, CONNECTED_BIT | GOT_IP_BIT);
+        break;
+    default:
+        ESP_LOGI(TAG, "wifi event %d", (int)event_id);
         break;
     }
     }

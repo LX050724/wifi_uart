@@ -131,6 +131,37 @@ static void telnet_event_handler(void *arg, esp_event_base_t event_base, int32_t
     }
 }
 
+static int set_keep_alive(int fd)
+{
+    int opval = 1;
+    if (lwip_setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &opval, sizeof(int)) == -1)
+    {
+        ESP_LOGE(TAG, "fd %d setsockopt SO_KEEPALIVE 1 failed %d %s", fd, errno, strerror(errno));
+        return ESP_FAIL;
+    }
+
+    opval = 60;
+    if (lwip_setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &opval, sizeof(int)) == -1)
+    {
+        ESP_LOGE(TAG, "fd %d setsockopt TCP_KEEPIDLE 60 failed %d %s", fd, errno, strerror(errno));
+        return ESP_FAIL;
+    }
+    opval = 300;
+    if (lwip_setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &opval, sizeof(int)) == -1)
+    {
+        ESP_LOGE(TAG, "fd %d setsockopt TCP_KEEPINTVL 300 failed %d %s", fd, errno, strerror(errno));
+        return ESP_FAIL;
+    }
+    opval = 9;
+    if (lwip_setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &opval, sizeof(int)) == -1)
+    {
+        ESP_LOGE(TAG, "fd %d setsockopt TCP_KEEPCNT 9 failed %d %s", fd, errno, strerror(errno));
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
 static int create_sockte()
 {
     struct sockaddr_in servaddr = {
@@ -153,9 +184,9 @@ static int create_sockte()
         goto err;
     }
 
-    if (lwip_setsockopt(sock_fd, SOL_SOCKET, SO_KEEPALIVE, &opval, sizeof(int)) == -1)
+    if (set_keep_alive(sock_fd) != ESP_OK)
     {
-        ESP_LOGE(TAG, "socket setsockopt SO_KEEPALIVE failed %d %s", errno, strerror(errno));
+        ESP_LOGE(TAG, "socket set_keep_alive failed %d %s", errno, strerror(errno));
         goto err;
     }
 
@@ -179,7 +210,7 @@ err:
 
 static void telnet_worker()
 {
-    struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
+    struct timeval tv = {.tv_sec = 300, .tv_usec = 0};
     int sock_fd = create_sockte();
     ESP_LOGI(TAG, "create socket %d", sock_fd);
 
@@ -218,6 +249,11 @@ static void telnet_worker()
                 int fd = lwip_accept(sock_fd, (struct sockaddr *)&inaddr, &addrlen);
                 if (fd != -1)
                 {
+                    if (set_keep_alive(fd) != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "fd %d set_keep_alive failed %d %s", fd, errno, strerror(errno));
+                    }
+
                     for (int i = 0; i < CLIENT_MAX; i++)
                     {
                         if (client_fds[i].fd == -1)
