@@ -16,6 +16,8 @@ esp_err_t usr_uart_init()
     uart_param_config(UART_NUM_1, &uart_config);
     uart_set_pin(UART_NUM_1, GPIO_NUM_5, GPIO_NUM_4, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
+    uart_enable_pattern_det_baud_intr(UART_NUM_1, '\n', 1, 64, 0, 0);
+    uart_pattern_queue_reset(UART_NUM_1, 20);
     return ESP_OK;
 }
 

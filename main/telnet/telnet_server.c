@@ -30,14 +30,16 @@
 #define TELNET_PORT 23
 #define TELNET_TX_BUF 1024
 
-#define IAC 255           /* FF interpret as command: */
-#define DONT 254          /* FE you are not to use option */
-#define DO 253            /* FD please, you use option */
-#define WONT 252          /* FC I won't use option */
-#define WILL 251          /* FB I will use option */
-#define SB 250            /* FA interpret as subnegotiation */
-#define SE 240            /* F0 end sub negotiation */
-#define NOP 241           /* F1 No Operation */
+#define TELNET_IAC 255           /* FF interpret as command: */
+#define TELNET_DONT 254          /* FE you are not to use option */
+#define TELNET_DO 253            /* FD please, you use option */
+#define TELNET_WONT 252          /* FC I won't use option */
+#define TELNET_WILL 251          /* FB I TELNET_WILL use option */
+#define TELNET_SB 250            /* FA interpret as subnegotiation */
+#define TELNET_SE 240            /* F0 end sub negotiation */
+#define TELNET_NOP 241           /* F1 No Operation */
+#define TELNET_EOF 236
+
 #define TELOPT_ECHO 1     /* 01 echo */
 #define TELOPT_SGA 3      /* 03 suppress go ahead */
 #define TELOPT_TTYPE 24   /* 18 terminal type */
@@ -53,13 +55,14 @@ typedef enum
     FSM_CMD,
     FSM_SUB_CMD,
     FSM_SUB_CMD_OPT,
-} IAC_FSM;
+    FSM_SKIP_NULL,
+} TELNET_IAC_FSM;
 
 typedef struct
 {
     int fd;
     char ip_str[32];
-    IAC_FSM fsm;
+    TELNET_IAC_FSM fsm;
     int opt;
 } TelnetConnect_t;
 
@@ -72,15 +75,15 @@ static void telnet_server_task(void *arg);
 static TaskHandle_t uart_event_task_handle;
 static void telnet_uart_event_task(void *arg);
 
-static uint8_t telnet_proc_iac(TelnetConnect_t *connect, uint8_t data);
+static int16_t telnet_proc_TELNET_IAC(TelnetConnect_t *connect, uint8_t data);
 static void telnet_send_to_all(const void *data, size_t len);
 static void telnet_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 static const uint8_t telnet_ctrl[] = {
-    IAC, DO,   TELOPT_ECHO, //
-    IAC, DO,   TELOPT_NAWS, //
-    IAC, WILL, TELOPT_ECHO, //
-    IAC, WILL, TELOPT_SGA,  //
+    TELNET_IAC, TELNET_DO,   TELOPT_ECHO, //
+    TELNET_IAC, TELNET_DO,   TELOPT_NAWS, //
+    TELNET_IAC, TELNET_WILL, TELOPT_ECHO, //
+    TELNET_IAC, TELNET_WILL, TELOPT_SGA,  //
 };
 
 esp_err_t telnet_init()
@@ -311,8 +314,8 @@ static void telnet_worker()
                         int send_len = 0;
                         for (int j = 0; j < rd_len; j++)
                         {
-                            uint8_t tmp = telnet_proc_iac(client, read_buf[j]);
-                            if (tmp != 0xff)
+                            int16_t tmp = telnet_proc_TELNET_IAC(client, read_buf[j]);
+                            if (tmp >= 0)
                             {
                                 *wp++ = tmp;
                                 send_len++;
@@ -357,7 +360,7 @@ static int telnet_uart_send_break()
 
 static void telnet_proc_cmd(TelnetConnect_t *connect, uint8_t op, uint8_t cmd)
 {
-    ESP_LOGI(TAG, "%d:%s Reveice IAC %02X %02X", connect->fd, connect->ip_str, op, cmd);
+    ESP_LOGI(TAG, "%d:%s Reveice TELNET_IAC %02X %02X", connect->fd, connect->ip_str, op, cmd);
     if (op == TELOPT_BREAK)
     {
         ESP_LOGW(TAG, "%d:%s, send break signal", connect->fd, connect->ip_str);
@@ -365,57 +368,62 @@ static void telnet_proc_cmd(TelnetConnect_t *connect, uint8_t op, uint8_t cmd)
     }
 }
 
-static uint8_t telnet_proc_iac(TelnetConnect_t *connect, uint8_t data)
+static int16_t telnet_proc_TELNET_IAC(TelnetConnect_t *connect, uint8_t data)
 {
     switch (connect->fsm)
     {
     case FSM_IDLE:
-        if (data == 0xff)
+        if (data == TELNET_IAC)
         {
             connect->fsm = FSM_OPT;
-            return 0xff;
+            return -1;
         }
-        else
-        {
-            connect->fsm = FSM_IDLE;
-            return data == 0 ? 0xff : data;
-        }
+        connect->fsm = (data == 0x0d) ? FSM_SKIP_NULL : FSM_IDLE;
+        return data;
     case FSM_OPT:
         switch (data)
         {
-        case DONT:
-        case DO:
-        case WONT:
-        case WILL:
+        case TELNET_DONT:
+        case TELNET_DO:
+        case TELNET_WONT:
+        case TELNET_WILL:
             connect->fsm = FSM_CMD;
             connect->opt = data;
-            return 0xff;
-        case SB:
+            return -1;
+        case TELNET_SB:
             connect->fsm = FSM_SUB_CMD;
-            return 0xff;
+            return -1;
         case TELOPT_BREAK:
             telnet_proc_cmd(connect, TELOPT_BREAK, 0);
+            connect->fsm = FSM_IDLE;
+            return -1;
+        case TELNET_IAC:
             connect->fsm = FSM_IDLE;
             return 0xff;
         default:
             connect->fsm = FSM_IDLE;
-            return 0xff;
+            return -1;
         }
     case FSM_SUB_CMD:
         if (data == 0xff)
         {
             connect->fsm = FSM_SUB_CMD_OPT;
         }
-        return 0xff;
+        return -1;
     case FSM_SUB_CMD_OPT:
         connect->fsm = FSM_IDLE;
-        return 0xff;
+        return -1;
     case FSM_CMD:
         connect->fsm = FSM_IDLE;
         telnet_proc_cmd(connect, connect->opt, data);
-        return 0xff;
+        return -1;
+    case FSM_SKIP_NULL:
+        connect->fsm = FSM_IDLE;
+        if (data == 0x00)
+            return -1;
+        return data;
     }
-    return 0xff;
+    return -1;
 }
 
 static void telnet_server_task(void *arg)
@@ -449,6 +457,8 @@ static void telnet_uart_event_task(void *arg)
         {
             switch (event.type)
             {
+            case UART_PATTERN_DET:
+                uart_pattern_pop_pos(UART_NUM_1);
             case UART_DATA:
                 uart_read_bytes(UART_NUM_1, uart_rdbuf, event.size, portMAX_DELAY);
                 telnet_send_to_all(uart_rdbuf, event.size);
